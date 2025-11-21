@@ -5,10 +5,20 @@ def count_exact_prob(k_matches, n_dice, joker_mode=True):
     p = 1/3 if joker_mode else 1/6
     return binom.pmf(k_matches, n_dice, p)
 
-def count_atleast_prob(k_matches, n_dice, joker_mode=True):
+def count_atleast_prob(k_matches, n_dice, p=None, joker_mode=True):
     """Calculate the probability of at least k matches in n dice rolls.
-    This is equialent to summing the probabilities of getting k, k+1, ..., n matches, but faster in python."""
-    p = 1/3 if joker_mode else 1/6
+
+    Args:
+        k_matches: Number of matches needed
+        n_dice: Number of dice being rolled
+        p: Custom probability for a single die match (optional)
+           If None, uses default: 1/3 if joker_mode else 1/6
+        joker_mode: Whether aces are wild (only used if p is None)
+
+    This is equivalent to summing the probabilities of getting k, k+1, ..., n matches, but faster in python.
+    """
+    if p is None:
+        p = 1/3 if joker_mode else 1/6
     return binom.sf(k_matches - 1, n_dice, p)
 
 def count_atmost_prob(k_matches, n_dice, joker_mode=True):
