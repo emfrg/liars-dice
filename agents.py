@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional
 import random
 from game_state import GameState, Bid, Player
-from bayesian_playground import count_atleast_prob, next_valid_bids, safest_bids
+from bayesian_playground import count_atleast_prob, count_exact_prob, next_valid_bids, safest_bids
 
 
 class BaseAgent(ABC):
@@ -44,11 +44,14 @@ class BaseAgent(ABC):
 
         # Count our matching dice
         my_matches = 0
+        # During palifico, aces are NOT wild
+        effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
         for die in my_dice:
             if die == bid.face_value:
                 my_matches += 1
-            elif game_state.joker_mode and die == 1 and bid.face_value != 1:
-                my_matches += 1  # Aces count as jokers
+            elif effective_joker_mode and die == 1 and bid.face_value != 1:
+                my_matches += 1  # Aces count as jokers (except during palifico)
 
         # How many more matches do we need from unknown dice?
         needed_from_unknown = max(0, bid.quantity - my_matches)
@@ -58,11 +61,11 @@ class BaseAgent(ABC):
             return 1.0 if needed_from_unknown == 0 else 0.0
 
         # Probability of a single unknown die matching
-        if game_state.joker_mode and bid.face_value != 1:
+        if effective_joker_mode and bid.face_value != 1:
             # Die matches if it's the target value OR an ace
             p_match = 2 / 6  # 1/6 for target + 1/6 for ace
         else:
-            # Die matches only if it's the target value
+            # Die matches only if it's the target value (or during palifico)
             p_match = 1 / 6
 
         return count_atleast_prob(needed_from_unknown, unknown_dice, p_match)
@@ -79,16 +82,18 @@ class ThresholdAgent(BaseAgent):
         player_id: str,
         bid_threshold: float = 0.5,
         challenge_threshold: float = 0.3,
+        calza_threshold: float = 0.15,
         verbose: bool = False,
         name: str = None,
     ):
         super().__init__(player_id, verbose)
         self.bid_threshold = bid_threshold
         self.challenge_threshold = challenge_threshold
+        self.calza_threshold = calza_threshold  # Minimum probability for calling calza
         self.name = name or f"Threshold-{bid_threshold}"
 
     def make_decision(self, game_state: GameState) -> Tuple[str, Optional[Bid]]:
-        """Decide whether to bid or challenge based on probability thresholds."""
+        """Decide whether to bid, challenge, or call calza based on probability thresholds."""
 
         # If there's no current bid, we must bid
         if game_state.current_bid is None:
@@ -103,6 +108,11 @@ class ThresholdAgent(BaseAgent):
             print(
                 f"{self.player_id} ({self.name}) sees bid {game_state.current_bid} with probability {current_bid_prob:.2%}"
             )
+
+        # Consider calza before challenging or bidding
+        calza_decision = self._consider_calza(game_state, current_bid_prob)
+        if calza_decision:
+            return calza_decision
 
         # Challenge if probability is too low
         if current_bid_prob < self.challenge_threshold:
@@ -124,6 +134,79 @@ class ThresholdAgent(BaseAgent):
                 )
             return ("challenge", None)
 
+    def _consider_calza(self, game_state: GameState, current_bid_prob: float) -> Optional[Tuple[str, None]]:
+        """
+        Consider calling calza (exact bid) if conditions are favorable.
+
+        Returns:
+            ('calza', None) if calza should be called, None otherwise
+        """
+        # Quick checks for calza eligibility
+        if game_state.is_palifico_round:
+            return None  # Calza not allowed during palifico
+        if len(game_state.get_active_players()) <= 2:
+            return None  # Calza not allowed with 2 or fewer players
+
+        next_player = game_state.get_next_player()
+        if next_player and self.player_id == next_player.id:
+            return None  # Next player cannot call calza
+
+        # Calculate exact probability
+        my_dice = self.get_my_dice(game_state)
+        total_dice = game_state.get_total_dice()
+        unknown_dice = total_dice - len(my_dice)
+        bid = game_state.current_bid
+
+        # Count our matching dice
+        my_matches = 0
+        effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
+        for die in my_dice:
+            if die == bid.face_value:
+                my_matches += 1
+            elif effective_joker_mode and die == 1 and bid.face_value != 1:
+                my_matches += 1
+
+        needed_from_unknown = max(0, bid.quantity - my_matches)
+
+        # Probability of a single unknown die matching
+        if effective_joker_mode and bid.face_value != 1:
+            p_match = 2 / 6
+        else:
+            p_match = 1 / 6
+
+        # Calculate exact probability
+        if unknown_dice == 0:
+            exact_prob = 1.0 if needed_from_unknown == 0 else 0.0
+        else:
+            exact_prob = count_exact_prob(needed_from_unknown, unknown_dice, p_match)
+
+        # Calculate probability of at least N+1 (we want this to be low)
+        if unknown_dice == 0:
+            prob_more = 0.0
+        else:
+            prob_more = count_atleast_prob(needed_from_unknown + 1, unknown_dice, p_match)
+
+        # Call calza if:
+        # 1. Exact probability is high enough
+        # 2. Probability of having more is low (ensures it's likely exactly N)
+        # 3. Overall bid probability is reasonable (not too low)
+        should_calza = (
+            exact_prob >= self.calza_threshold
+            and prob_more < 0.3  # Less than 30% chance of having more
+            and current_bid_prob > 0.25  # Bid is at least somewhat plausible
+        )
+
+        if should_calza:
+            if self.verbose:
+                print(
+                    f"{self.player_id} ({self.name}) calls CALZA! "
+                    f"(exact prob: {exact_prob:.2%}, more prob: {prob_more:.2%})"
+                )
+            return ("calza", None)
+
+        return None
+
     def _make_opening_bid(self, game_state: GameState) -> Tuple[str, Bid]:
         """Make the opening bid of a round."""
         my_dice = self.get_my_dice(game_state)
@@ -134,8 +217,11 @@ class ThresholdAgent(BaseAgent):
         for die in my_dice:
             dice_counts[die] = dice_counts.get(die, 0) + 1
 
+        # During palifico, aces are NOT wild
+        effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
         # If we have aces and joker mode is on, they're valuable
-        if game_state.joker_mode and 1 in dice_counts:
+        if effective_joker_mode and 1 in dice_counts:
             # Aces help with any bid
             joker_boost = dice_counts[1]
         else:
@@ -150,8 +236,13 @@ class ThresholdAgent(BaseAgent):
                 best_count = count
                 best_face = face
 
-        # If we have lots of aces, consider bidding aces
-        if 1 in dice_counts and dice_counts[1] >= 2:
+        # During palifico, only palifico player can bid on aces
+        can_bid_aces = not game_state.is_palifico_round or (
+            self.player_id == game_state.palifico_player_id
+        )
+
+        # If we have lots of aces, consider bidding aces (if allowed)
+        if can_bid_aces and 1 in dice_counts and dice_counts[1] >= 2:
             best_face = 1
             best_count = dice_counts[1]
 
@@ -164,7 +255,8 @@ class ThresholdAgent(BaseAgent):
         opening_bid = Bid(safe_quantity, best_face)
 
         if self.verbose:
-            print(f"{self.player_id} ({self.name}) opens with {opening_bid}")
+            palifico_note = " [PALIFICO]" if game_state.is_palifico_round else ""
+            print(f"{self.player_id} ({self.name}) opens with {opening_bid}{palifico_note}")
 
         return ("bid", opening_bid)
 
@@ -173,12 +265,30 @@ class ThresholdAgent(BaseAgent):
         my_dice = self.get_my_dice(game_state)
         total_dice = game_state.get_total_dice()
 
+        # During palifico, effective joker mode is false
+        effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
         # Get all valid next bids
         valid_bids = next_valid_bids(
             (game_state.current_bid.quantity, game_state.current_bid.face_value),
             total_dice,
-            game_state.joker_mode,
+            effective_joker_mode,
         )
+
+        # During palifico: filter bids to same face value only
+        # Exception: if this player already had palifico, they can change face value
+        if game_state.is_palifico_round:
+            player_already_had_palifico = (
+                self.player_id in game_state.players_who_had_palifico
+                and self.player_id != game_state.palifico_player_id
+            )
+
+            if not player_already_had_palifico:
+                # Can only raise quantity, same face value
+                current_face = game_state.current_bid.face_value
+                valid_bids = [
+                    (q, f) for q, f in valid_bids if f == current_face
+                ]
 
         # Calculate probability for each valid bid and filter by threshold
         acceptable_bids = []
@@ -202,14 +312,14 @@ class ThresholdAgent(BaseAgent):
             selected_bid = acceptable_bids[0][0]
 
         # Safeguard: Verify the selected bid is actually valid
-        if not game_state.is_valid_bid(selected_bid):
+        if not game_state.is_valid_bid(selected_bid, self.player_id):
             if self.verbose:
                 print(
                     f"WARNING: {self.player_id} generated invalid bid {selected_bid}!"
                 )
             # Try to find any valid bid from our acceptable list
             for bid, prob in acceptable_bids:
-                if game_state.is_valid_bid(bid):
+                if game_state.is_valid_bid(bid, self.player_id):
                     selected_bid = bid
                     break
             else:
@@ -293,11 +403,24 @@ class RandomAgent(BaseAgent):
 
         # Try to make a random valid bid
         total_dice = game_state.get_total_dice()
+        # During palifico, effective joker mode is false
+        effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
         valid_bids = next_valid_bids(
             (game_state.current_bid.quantity, game_state.current_bid.face_value),
             total_dice,
-            game_state.joker_mode,
+            effective_joker_mode,
         )
+
+        # During palifico: filter to same face value only
+        if game_state.is_palifico_round:
+            player_already_had_palifico = (
+                self.player_id in game_state.players_who_had_palifico
+                and self.player_id != game_state.palifico_player_id
+            )
+            if not player_already_had_palifico:
+                current_face = game_state.current_bid.face_value
+                valid_bids = [(q, f) for q, f in valid_bids if f == current_face]
 
         if valid_bids:
             quantity, face = random.choice(valid_bids)

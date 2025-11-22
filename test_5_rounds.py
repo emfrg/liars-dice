@@ -54,6 +54,43 @@ for round_num in range(1, NUM_ROUNDS + 1):
                     f"Current bid: {game.current_bid}. This should never occur."
                 )
 
+        elif action == "calza":
+            caller = current_player.id
+            bidder = game.bid_history[-1][0] if game.bid_history else "Unknown"
+
+            print(f"\n{caller} calls CALZA on {bidder}'s bid!")
+            print(f"The bid was: {game.current_bid}")
+
+            # Show actual count
+            dist = game.get_dice_distribution()
+            target = game.current_bid.face_value
+            actual = dist.get(target, 0)
+            # During palifico, aces are NOT wild
+            effective_joker = game.joker_mode and not game.is_palifico_round
+            if effective_joker and target != 1:
+                actual += dist.get(1, 0)
+            print(f"Actual count: {actual}")
+
+            # Resolve calza
+            result = game.calza(caller)
+            if not result['valid']:
+                print(f"CALZA INVALID: {result['error']}")
+                # Force challenge instead
+                print(f"\n{caller} CHALLENGES {bidder} instead!")
+                success, winner, loser = game.challenge_current_bid(caller)
+                print(
+                    f"Challenge {'SUCCESSFUL' if success else 'FAILED'}! {loser} loses a die."
+                )
+                print(f"{loser} now has {game.players[loser].num_dice} dice")
+            else:
+                if result['success']:
+                    print(f"CALZA SUCCESSFUL! Exactly {actual} dice!")
+                    print(f"{result['winner_id']} GAINS a die! (now has {game.players[result['winner_id']].num_dice} dice)")
+                else:
+                    print(f"CALZA FAILED! (bid was {result['bid_quantity']}, actual was {actual})")
+                    print(f"{result['loser_id']} LOSES a die! (now has {game.players[result['loser_id']].num_dice} dice)")
+            break
+
         elif action == "challenge":
             challenger = current_player.id
             challenged = game.bid_history[-1][0]

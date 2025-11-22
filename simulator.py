@@ -34,9 +34,13 @@ class GameSimulator:
             'total_bids': 0,
             'successful_challenges': 0,
             'failed_challenges': 0,
+            'successful_calzas': 0,
+            'failed_calzas': 0,
             'bids_by_player': defaultdict(int),
             'challenges_by_player': defaultdict(int),
-            'dice_lost_by_player': defaultdict(int)
+            'calzas_by_player': defaultdict(int),
+            'dice_lost_by_player': defaultdict(int),
+            'dice_gained_by_player': defaultdict(int)
         }
 
     def run_game(self) -> Tuple[str, Dict]:
@@ -79,6 +83,11 @@ class GameSimulator:
 
         if self.verbose:
             print(f"\n--- Round {game_state.round_number} ---")
+            # Display palifico notification
+            if game_state.is_palifico_round:
+                print(f"*** PALIFICO ROUND *** (Player {game_state.palifico_player_id} has 1 die)")
+                print("    Aces are NOT wild this round!")
+                print("    Only quantity can be raised (same face value)")
             print(f"Active players: {[p.id for p in game_state.get_active_players()]}")
             print(f"Total dice in play: {game_state.get_total_dice()}")
 
@@ -109,6 +118,40 @@ class GameSimulator:
                         print(f"  {current_player.id} made invalid bid: {bid}")
                     # Invalid bid, force challenge
                     action = 'challenge'
+
+            if action == 'calza':
+                # Handle calza (exact bid call)
+                if self.verbose:
+                    bidder_id = game_state.bid_history[-1][0] if game_state.bid_history else "Unknown"
+                    print(f"  {current_player.id} calls CALZA on {bidder_id}'s bid!")
+                    self._reveal_all_dice(game_state)
+
+                # Resolve calza
+                result = game_state.calza(current_player.id)
+
+                if not result['valid']:
+                    if self.verbose:
+                        print(f"  CALZA INVALID: {result['error']}")
+                    # Invalid calza, force challenge instead
+                    action = 'challenge'
+                else:
+                    self.game_stats['calzas_by_player'][current_player.id] += 1
+                    if result['success']:
+                        self.game_stats['successful_calzas'] += 1
+                        self.game_stats['dice_gained_by_player'][result['winner_id']] += 1
+                    else:
+                        self.game_stats['failed_calzas'] += 1
+                        self.game_stats['dice_lost_by_player'][result['loser_id']] += 1
+
+                    if self.verbose:
+                        if result['success']:
+                            print(f"  CALZA SUCCESSFUL! Exactly {result['actual_count']} dice!")
+                            print(f"  {result['winner_id']} GAINS a die! (now has {game_state.players[result['winner_id']].num_dice} dice)")
+                        else:
+                            print(f"  CALZA FAILED! Actual count: {result['actual_count']} (bid was {result['bid_quantity']})")
+                            print(f"  {result['loser_id']} LOSES a die! (now has {game_state.players[result['loser_id']].num_dice} dice)")
+
+                    round_over = True
 
             if action == 'challenge':
                 # Get the previous bidder (the one being challenged)
@@ -164,14 +207,19 @@ class GameSimulator:
             target_face = game_state.current_bid.face_value
             actual = dist.get(target_face, 0)
 
-            # Add jokers if applicable
-            if game_state.joker_mode and target_face != 1:
+            # Add jokers if applicable (NOT during palifico)
+            effective_joker_mode = game_state.joker_mode and not game_state.is_palifico_round
+
+            if effective_joker_mode and target_face != 1:
                 actual += dist.get(1, 0)
                 print(f"\n  Bid was: {game_state.current_bid}")
                 print(f"  Actual {target_face}s: {dist.get(target_face, 0)} + {dist.get(1, 0)} aces = {actual}")
             else:
                 print(f"\n  Bid was: {game_state.current_bid}")
-                print(f"  Actual count: {actual}")
+                if game_state.is_palifico_round and target_face != 1:
+                    print(f"  Actual count: {actual} (PALIFICO - aces not wild)")
+                else:
+                    print(f"  Actual count: {actual}")
 
 
 class TournamentRunner:
@@ -185,7 +233,10 @@ class TournamentRunner:
             'total_bids': 0,
             'total_challenges': 0,
             'successful_challenges': 0,
+            'total_calzas': 0,
+            'successful_calzas': 0,
             'dice_lost': 0,
+            'dice_gained': 0,
             'avg_game_length': []
         })
 
@@ -221,7 +272,9 @@ class TournamentRunner:
 
                 self.results[agent_type]['total_bids'] += stats['bids_by_player'][pid]
                 self.results[agent_type]['total_challenges'] += stats['challenges_by_player'][pid]
+                self.results[agent_type]['total_calzas'] += stats['calzas_by_player'][pid]
                 self.results[agent_type]['dice_lost'] += stats['dice_lost_by_player'][pid]
+                self.results[agent_type]['dice_gained'] += stats['dice_gained_by_player'][pid]
                 self.results[agent_type]['avg_game_length'].append(stats['rounds'])
 
             # Track successful challenges by agent
@@ -250,7 +303,11 @@ class TournamentRunner:
                 'total_games': games,
                 'avg_bids_per_game': data['total_bids'] / games,
                 'avg_challenges_per_game': data['total_challenges'] / games,
+                'avg_calzas_per_game': data['total_calzas'] / games,
+                'total_calzas': data['total_calzas'],
+                'successful_calzas': data['successful_calzas'],
                 'avg_dice_lost_per_game': data['dice_lost'] / games,
+                'avg_dice_gained_per_game': data['dice_gained'] / games,
                 'avg_game_length': avg_game_length
             }
 
@@ -280,4 +337,9 @@ class TournamentRunner:
         for agent_type, stats in sorted_agents:
             print(f"\n{agent_type}:")
             print(f"  Average dice lost per game: {stats['avg_dice_lost_per_game']:.1f}")
+            print(f"  Average dice gained per game: {stats['avg_dice_gained_per_game']:.1f}")
+            print(f"  Average calzas per game: {stats['avg_calzas_per_game']:.2f}")
+            if stats['total_calzas'] > 0:
+                calza_success_rate = stats['successful_calzas'] / stats['total_calzas']
+                print(f"  Calza success rate: {calza_success_rate:.1%} ({stats['successful_calzas']}/{stats['total_calzas']})")
             print(f"  Average game length: {stats['avg_game_length']:.1f} rounds")

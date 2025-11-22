@@ -60,15 +60,35 @@ def next_valid_bids(current_bid, n_dice, joker_mode=True):
     return next_bids
 
 
-def safest_bids(my_dice, current_bid, n_dice):
-    """Select the next bid based on highest probability of being valid."""
+def safest_bids(my_dice, current_bid, n_dice, joker_mode=True):
+    """Select the next bid based on highest probability of being valid.
+
+    Args:
+        my_dice: List of known dice
+        current_bid: Current bid tuple (quantity, face_value)
+        n_dice: Total dice in game
+        joker_mode: Whether aces are wild
+    """
     unknown_dice = n_dice - len(my_dice)
-    next_bids = next_valid_bids(current_bid, n_dice)
+    next_bids = next_valid_bids(current_bid, n_dice, joker_mode)
     all_bids = []
 
     for bid in next_bids:
-        known_matches = count_matches(my_dice, bid[1])
-        prob = count_atleast_prob(bid[0] - known_matches, unknown_dice, 1 / 3)
+        # Count matches in known dice (handles joker mode internally)
+        known_matches = count_matches(my_dice, bid[1], joker_mode)
+
+        # Determine probability for unknown dice
+        if bid[1] == 1:
+            # Bidding on aces - only aces count (p = 1/6)
+            p_match = 1 / 6
+        elif joker_mode:
+            # Bidding on non-aces with joker mode - aces count as wild (p = 2/6 = 1/3)
+            p_match = 1 / 3
+        else:
+            # No joker mode - only exact matches count (p = 1/6)
+            p_match = 1 / 6
+
+        prob = count_atleast_prob(bid[0] - known_matches, unknown_dice, p_match)
         prob_norm = round(float(prob), 4)
         all_bids.append((bid, prob_norm))
 
@@ -77,25 +97,45 @@ def safest_bids(my_dice, current_bid, n_dice):
     return bids_sorted
 
 
-def acceptable_bids(my_dice, current_bid, n_dice, prob_threshold):
+def acceptable_bids(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True):
     """Select bids above a certain probability threshold."""
-    bids = safest_bids(my_dice, current_bid, n_dice)
+    bids = safest_bids(my_dice, current_bid, n_dice, joker_mode)
     selected = [bid for bid in bids if bid[1] >= prob_threshold]
     return selected
 
 
-def risky_bids(my_dice, current_bid, n_dice, prob_threshold):
+def risky_bids(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True):
     """Select bids with the highest jump"""
-    bids = acceptable_bids(my_dice, current_bid, n_dice, prob_threshold)
+    bids = acceptable_bids(my_dice, current_bid, n_dice, prob_threshold, joker_mode)
     risky_bids = sorted(bids, key=lambda x: x[0][0], reverse=True)
     return risky_bids
 
 
-def select_action(my_dice, current_bid, n_dice, prob_threshold):
-    """Select action based on baseline bid probabilities."""
-    candidate_bids = risky_bids(my_dice, current_bid, n_dice, prob_threshold)
-    current_bid_prob = count_atleast_prob(current_bid[0], n_dice - len(my_dice), 1 / 3)
-    equal_prob = count_exact_prob(current_bid[0], n_dice - len(my_dice), 1 / 3)
+def select_action(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True):
+    """Select action based on baseline bid probabilities.
+
+    Args:
+        my_dice: List of known dice
+        current_bid: Current bid tuple (quantity, face_value)
+        n_dice: Total dice in game
+        prob_threshold: Minimum probability threshold for acceptable bids
+        joker_mode: Whether aces are wild
+    """
+    candidate_bids = risky_bids(my_dice, current_bid, n_dice, prob_threshold, joker_mode)
+
+    # Determine probability for current bid
+    if current_bid[1] == 1:
+        # Bidding on aces - only aces count (p = 1/6)
+        p_match = 1 / 6
+    elif joker_mode:
+        # Bidding on non-aces with joker mode - aces count as wild (p = 1/3)
+        p_match = 1 / 3
+    else:
+        # No joker mode - only exact matches count (p = 1/6)
+        p_match = 1 / 6
+
+    current_bid_prob = count_atleast_prob(current_bid[0], n_dice - len(my_dice), p_match)
+    equal_prob = count_exact_prob(current_bid[0], n_dice - len(my_dice), p_match)
     print(
         f"Current bid: {current_bid} (probability: {current_bid_prob:.4f}, exact: {equal_prob:.4f})"
     )
