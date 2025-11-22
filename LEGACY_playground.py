@@ -36,26 +36,19 @@ def next_valid_bids(current_bid, n_dice, joker_mode=True):
     quantity, value = current_bid
     next_bids = []
 
-    # Higher quantities with same face value
+    # Higher quantities with same value
     next_bids.extend((q, value) for q in range(quantity + 1, n_dice + 1))
 
-    # Higher face values with same or higher quantity
-    if value == 1:
-        # If current bid is aces (joker), need at least 2*quantity + 1 for non-aces
-        min_quantity = 2 * quantity + 1
-        for v in range(2, 7):  # Values 2-6
-            next_bids.extend((q, v) for q in range(min_quantity, n_dice + 1))
-    else:
-        # For non-ace current bids:
-        # Same quantity with higher face values
-        for v in range(value + 1, 7):
-            next_bids.extend((q, v) for q in range(quantity, n_dice + 1))
+    # Higher values with any valid quantity
+    quantity = (
+        2 * quantity if value == 1 else quantity
+    )  # Minimum quantity for next value when current is ace
+    for v in range(value + 1, 7):
+        next_bids.extend((q, v) for q in range(quantity + 1, n_dice + 1))
 
-    # Joker bids (switching to aces)
+    # Joker bid (half quantity, value = 1)
     if joker_mode and value != 1:
-        # When switching to joker, min quantity is (current_quantity + 1) // 2
-        min_joker_quantity = (quantity + 1) // 2
-        next_bids.extend((q, 1) for q in range(min_joker_quantity, n_dice + 1))
+        next_bids.append(((quantity + 1) // 2, 1))
 
     return next_bids
 

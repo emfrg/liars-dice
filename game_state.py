@@ -29,10 +29,10 @@ class Bid:
 
     def is_higher_than(self, other: "Bid") -> bool:
         """Check if this bid is higher than another (Perudo rules)."""
-        # Can increase quantity with same or higher face
-        if self.quantity > other.quantity and self.face_value >= other.face_value:
+        # Can increase quantity with ANY face value
+        if self.quantity > other.quantity:
             return True
-        # Can keep same quantity with higher face
+        # Can keep same quantity only with HIGHER face value
         if self.quantity == other.quantity and self.face_value > other.face_value:
             return True
         return False

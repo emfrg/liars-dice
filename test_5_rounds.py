@@ -48,8 +48,11 @@ for round_num in range(1, NUM_ROUNDS + 1):
             if game.make_bid(current_player.id, bid):
                 print(f"\n{current_player.id} bids: {bid}")
             else:
-                print(f"\n{current_player.id} made invalid bid!")
-                break
+                # This should never happen after our fixes
+                raise RuntimeError(
+                    f"CRITICAL ERROR: {current_player.id} attempted invalid bid {bid}! "
+                    f"Current bid: {game.current_bid}. This should never occur."
+                )
 
         elif action == "challenge":
             challenger = current_player.id

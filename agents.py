@@ -119,7 +119,9 @@ class ThresholdAgent(BaseAgent):
         else:
             # Can't find a good bid, must challenge
             if self.verbose:
-                print(f"{self.player_id} ({self.name}) can't find good bid, challenges!")
+                print(
+                    f"{self.player_id} ({self.name}) can't find good bid, challenges!"
+                )
             return ("challenge", None)
 
     def _make_opening_bid(self, game_state: GameState) -> Tuple[str, Bid]:
@@ -199,13 +201,33 @@ class ThresholdAgent(BaseAgent):
         else:
             selected_bid = acceptable_bids[0][0]
 
+        # Safeguard: Verify the selected bid is actually valid
+        if not game_state.is_valid_bid(selected_bid):
+            if self.verbose:
+                print(
+                    f"WARNING: {self.player_id} generated invalid bid {selected_bid}!"
+                )
+            # Try to find any valid bid from our acceptable list
+            for bid, prob in acceptable_bids:
+                if game_state.is_valid_bid(bid):
+                    selected_bid = bid
+                    break
+            else:
+                # No valid bids found at all - this should never happen
+                print(
+                    f"ERROR: No valid bids found for {self.player_id}!\n THIS SHOULD NEVER HAPPEN!"
+                )
+                return None
+
         if self.verbose:
             prob = (
                 acceptable_bids[0][1]
                 if selected_bid == acceptable_bids[0][0]
                 else acceptable_bids[1][1]
             )
-            print(f"{self.player_id} ({self.name}) bids {selected_bid} (probability: {prob:.2%})")
+            print(
+                f"{self.player_id} ({self.name}) bids {selected_bid} (probability: {prob:.2%})"
+            )
 
         return selected_bid
 
@@ -286,7 +308,9 @@ class RandomAgent(BaseAgent):
         else:
             # No valid bids available, must challenge
             if self.verbose:
-                print(f"{self.player_id} ({self.name}) forced to challenge (no valid bids)")
+                print(
+                    f"{self.player_id} ({self.name}) forced to challenge (no valid bids)"
+                )
             return ("challenge", None)
 
     def _make_random_opening_bid(self, game_state: GameState) -> Tuple[str, Bid]:
