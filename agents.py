@@ -308,8 +308,10 @@ class ThresholdAgent(BaseAgent):
         if len(acceptable_bids) > 1 and random.random() < 0.2:
             # 20% of the time, take the second-best option
             selected_bid = acceptable_bids[1][0]
+            selected_prob = acceptable_bids[1][1]
         else:
             selected_bid = acceptable_bids[0][0]
+            selected_prob = acceptable_bids[0][1]
 
         # Safeguard: Verify the selected bid is actually valid
         if not game_state.is_valid_bid(selected_bid, self.player_id):
@@ -321,6 +323,7 @@ class ThresholdAgent(BaseAgent):
             for bid, prob in acceptable_bids:
                 if game_state.is_valid_bid(bid, self.player_id):
                     selected_bid = bid
+                    selected_prob = prob  # Update probability to match the new bid
                     break
             else:
                 # No valid bids found at all - this should never happen
@@ -330,13 +333,8 @@ class ThresholdAgent(BaseAgent):
                 return None
 
         if self.verbose:
-            prob = (
-                acceptable_bids[0][1]
-                if selected_bid == acceptable_bids[0][0]
-                else acceptable_bids[1][1]
-            )
             print(
-                f"{self.player_id} ({self.name}) bids {selected_bid} (probability: {prob:.2%})"
+                f"{self.player_id} ({self.name}) bids {selected_bid} (probability: {selected_prob:.2%})"
             )
 
         return selected_bid
