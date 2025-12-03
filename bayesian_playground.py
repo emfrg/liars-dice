@@ -121,7 +121,9 @@ def select_action(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True)
         prob_threshold: Minimum probability threshold for acceptable bids
         joker_mode: Whether aces are wild
     """
-    candidate_bids = risky_bids(my_dice, current_bid, n_dice, prob_threshold, joker_mode)
+    candidate_bids = risky_bids(
+        my_dice, current_bid, n_dice, prob_threshold, joker_mode
+    )
 
     # Determine probability for current bid
     if current_bid[1] == 1:
@@ -134,7 +136,9 @@ def select_action(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True)
         # No joker mode - only exact matches count (p = 1/6)
         p_match = 1 / 6
 
-    current_bid_prob = count_atleast_prob(current_bid[0], n_dice - len(my_dice), p_match)
+    current_bid_prob = count_atleast_prob(
+        current_bid[0], n_dice - len(my_dice), p_match
+    )
     equal_prob = count_exact_prob(current_bid[0], n_dice - len(my_dice), p_match)
     print(
         f"Current bid: {current_bid} (probability: {current_bid_prob:.4f}, exact: {equal_prob:.4f})"
@@ -145,8 +149,10 @@ def select_action(my_dice, current_bid, n_dice, prob_threshold, joker_mode=True)
 
 
 if __name__ == "__main__":
-    my_dice = [2, 3, 1, 5]  # Example known dice
-    current_bid = (3, 2)  # Example current bid
-    n_dice = 30  # Total number of dice in the game
 
-    print(select_action(my_dice, current_bid, n_dice, prob_threshold=0.5))
+    my_dice = [2, 2, 2, 4, 6]  # Example known dice
+    current_bid = (4, 3)  # Example current bid
+    n_dice = 15  # Total number of dice in the game
+
+    # print(select_action(my_dice, current_bid, n_dice, prob_threshold=0.5))
+    print(count_atleast_prob(current_bid[0], n_dice - 5, 1 / 3))
